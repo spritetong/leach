@@ -1,0 +1,16 @@
+[package]
+name = "leach"
+version = "0.1.1"
+edition = "2021"
+
+[lib]
+name = "leach"
+path = "src/lib.rs"
+
+[dependencies]
+bindgen = "0.63"
+build-helper = "0.1"
+duct = "0.13"
+filetime = "0.2"
+regex = "1"
+walkdir = "2"
