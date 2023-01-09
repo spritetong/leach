@@ -26,7 +26,7 @@ pub mod cargo {
     /// or the target triple otherwize.
     pub fn linker_triple() -> String {
         let triple = target::triple().to_string();
-        match env::var(&format!(
+        match env::var(format!(
             "CARGO_TARGET_{}_LINKER",
             canon_feature_name(&triple)
         ))
@@ -78,7 +78,7 @@ pub mod cargo {
         // TARGET: triple
         // CARGO_WORKSPACE_DIR, CARGO_BUILD_TARGET_DIR, CARGO_BUILD_OUTPUT_DIR
 
-        let out_path = realpath(&env::var("OUT_DIR").unwrap());
+        let out_path = realpath(env::var("OUT_DIR").unwrap());
         let mut it = out_path.ancestors().skip(3);
         // <workspace>/target/<debug|release>
         let output_dir = it.next().unwrap().to_string_lossy();
