@@ -24,31 +24,7 @@ pub fn is_under_rust_analyzer(set_rebuild_tag: bool) -> bool {
     result
 }
 
-pub fn build() -> io::Result<()> {
-    let root = cargo::workspace_dir();
-    rerun_if_changed(root.join("CMakeLists.txt"));
-    match duct::cmd!(
-        "make",
-        "cmake-build",
-        format!("TARGET={}", cargo::linker_triple())
-    )
-    .stdout_to_stderr()
-    .unchecked()
-    .dir(root)
-    .run()?
-    .status
-    .code()
-    .unwrap_or(1)
-    {
-        0 => Ok(()),
-        status => Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("CMake build failed with error code: {}", status),
-        )),
-    }
-}
-
-pub fn watch_changed<R, P>(root: R, patterns: P) -> io::Result<()>
+pub fn monitor_file_changes<R, P>(root: R, patterns: P) -> io::Result<()>
 where
     R: AsRef<Path>,
     P: IntoIterator,
@@ -90,11 +66,73 @@ where
     Ok(())
 }
 
+/// Build helper for cmake.
+#[derive(Clone, Default)]
+pub struct Builder {
+    target: String,
+    args: Vec<String>,
+}
+
+impl Builder {
+    pub fn target(&mut self, target: impl Into<String>) -> &mut Self {
+        self.target = target.into();
+        self
+    }
+
+    pub fn arg(&mut self, arg: impl Into<String>) -> &mut Self {
+        self.args.push(arg.into());
+        self
+    }
+
+    pub fn args<A>(&mut self, args: A) -> &mut Self
+    where
+        A: IntoIterator,
+        A::Item: Into<String>,
+    {
+        self.args.extend(args.into_iter().map(|x| x.into()));
+        self
+    }
+
+    pub fn build(&mut self) -> io::Result<()> {
+        let root = cargo::workspace_dir();
+
+        let target = if self.target.is_empty() {
+            "cmake-build".to_owned()
+        } else if self.target.starts_with("cmake-") {
+            self.target.clone()
+        } else {
+            format!("cmake-{}", &self.target)
+        };
+
+        let mut args = vec![target];
+        args.extend(self.args.drain(..));
+        args.push(format!("TARGET={}", cargo::linker_triple()));
+
+        rerun_if_changed(root.join("CMakeLists.txt"));
+        match duct::cmd("make", args)
+            .stdout_to_stderr()
+            .unchecked()
+            .dir(root)
+            .run()?
+            .status
+            .code()
+            .unwrap_or(1)
+        {
+            0 => Ok(()),
+            status => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("CMake build failed with error code: {}", status),
+            )),
+        }
+    }
+}
+
 #[derive(Default, Hash)]
 pub struct Bindgen {
     rs_file: Option<PathBuf>,
     headers: Vec<String>,
     includes: Vec<String>,
+    definitions: Vec<(String, String)>,
     allowlist: Vec<String>,
     blocklist: Vec<String>,
     header_codes: Vec<String>,
@@ -103,8 +141,13 @@ pub struct Bindgen {
 }
 
 impl Bindgen {
-    pub fn rs_file<T: AsRef<Path>>(&mut self, rs_file: T) -> &mut Self {
-        self.rs_file = Some(rs_file.as_ref().to_owned());
+    pub fn rs_file<T: Into<PathBuf>>(&mut self, rs_file: T) -> &mut Self {
+        self.rs_file = Some(rs_file.into());
+        self
+    }
+
+    pub fn header<T: AsRef<Path>>(&mut self, header: T) -> &mut Self {
+        self.headers.push(Self::norm_path(realpath(header)));
         self
     }
 
@@ -118,6 +161,11 @@ impl Bindgen {
         self
     }
 
+    pub fn include<T: AsRef<Path>>(&mut self, include: T) -> &mut Self {
+        self.includes.push(Self::norm_path(include));
+        self
+    }
+
     pub fn includes<T>(&mut self, includes: T) -> &mut Self
     where
         T: IntoIterator,
@@ -128,60 +176,87 @@ impl Bindgen {
         self
     }
 
+    pub fn definition<K, V>(&mut self, name: K, value: V) -> &mut Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.definitions.push((name.into(), value.into()));
+        self
+    }
+
+    pub fn definitions<T, K, V>(&mut self, definitions: T) -> &mut Self
+    where
+        T: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.definitions
+            .extend(definitions.into_iter().map(|(k, v)| (k.into(), v.into())));
+        self
+    }
+
     pub fn allowlist<T>(&mut self, allowlist: T) -> &mut Self
     where
         T: IntoIterator,
-        T::Item: AsRef<str>,
+        T::Item: Into<String>,
     {
         self.allowlist
-            .extend(allowlist.into_iter().map(|x| x.as_ref().to_owned()));
+            .extend(allowlist.into_iter().map(|x| x.into()));
         self
     }
 
     pub fn blocklist<T>(&mut self, blocklist: T) -> &mut Self
     where
         T: IntoIterator,
-        T::Item: AsRef<str>,
+        T::Item: Into<String>,
     {
         self.blocklist
-            .extend(blocklist.into_iter().map(|x| x.as_ref().to_owned()));
+            .extend(blocklist.into_iter().map(|x| x.into()));
         self
     }
 
-    pub fn header_codes<T>(&mut self, lines: T) -> &mut Self
+    pub fn raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
+        self.header_codes.push(line.into());
+        self
+    }
+
+    pub fn raw_lines<T>(&mut self, lines: T) -> &mut Self
     where
         T: IntoIterator,
-        T::Item: AsRef<str>,
+        T::Item: Into<String>,
     {
         self.header_codes
-            .extend(lines.into_iter().map(|x| x.as_ref().to_owned()));
+            .extend(lines.into_iter().map(|x| x.into()));
         self
     }
 
-    pub fn footer_codes<T>(&mut self, lines: T) -> &mut Self
+    pub fn tail_raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
+        self.footer_codes.push(line.into());
+        self
+    }
+
+    pub fn tail_raw_lines<T>(&mut self, lines: T) -> &mut Self
     where
         T: IntoIterator,
-        T::Item: AsRef<str>,
+        T::Item: Into<String>,
     {
         self.footer_codes
-            .extend(lines.into_iter().map(|x| x.as_ref().to_owned()));
+            .extend(lines.into_iter().map(|x| x.into()));
         self
     }
 
     pub fn derive<N, T>(&mut self, types: T, traits: N) -> &mut Self
     where
         T: IntoIterator,
-        T::Item: AsRef<str>,
+        T::Item: Into<String>,
         N: IntoIterator,
-        N::Item: AsRef<str>,
+        N::Item: Into<String>,
     {
-        let mut types = types
-            .into_iter()
-            .map(|x| x.as_ref().to_owned())
-            .collect::<Vec<String>>();
+        let mut types = types.into_iter().map(|x| x.into()).collect::<Vec<String>>();
         let traits = traits
             .into_iter()
-            .map(|x| x.as_ref().to_owned())
+            .map(|x| x.into())
             .collect::<Vec<String>>();
         if types.is_empty() {
             types.push(String::new())
@@ -372,6 +447,16 @@ impl Bindgen {
             builder = builder.clang_arg(format!("-I{}", include))
         }
 
+        // Macro definitions
+        for (name, value) in self.definitions.iter() {
+            builder = builder.clang_arg(format!("-D{}={}", name, value))
+        }
+
+        // Header codes
+        for line in self.header_codes.iter() {
+            builder = builder.raw_line(line);
+        }
+
         // Set allowlist
         for name in self.allowlist.iter() {
             builder = builder
@@ -404,18 +489,17 @@ impl Bindgen {
         w.write_all(b"#![allow(dead_code)]\n")?;
         w.write_all(b"#![allow(improper_ctypes)]\n")?;
         w.write_all(b"#![allow(non_camel_case_types)]\n")?;
+        w.write_all(b"#![allow(non_upper_case_globals)]\n")?;
+        w.write_all(b"#![allow(non_snake_case)]\n")?;
         w.write_all(b"#![allow(clippy::missing_safety_doc)]\n")?;
         w.write_all(b"\n")?;
-        for line in self.header_codes.iter() {
-            w.write_all(line.as_bytes())?;
-            w.write_all(b"\n")?;
-        }
-        w.write_all(b"\n")?;
         bindings.write(Box::new(&mut w))?;
-        w.write_all(b"\n")?;
-        for line in self.footer_codes.iter() {
-            w.write_all(line.as_bytes())?;
+        if !self.footer_codes.is_empty() {
             w.write_all(b"\n")?;
+            for line in self.footer_codes.iter() {
+                w.write_all(line.as_bytes())?;
+                w.write_all(b"\n")?;
+            }
         }
         w.flush()?;
         let file = fs::OpenOptions::new()
@@ -455,6 +539,15 @@ impl Bindgen {
 
         // UTF-8 BOM
         file.write_all(b"\xEF\xBB\xBF")?;
+
+        // Remove all empty lines at the tail.
+        while let Some(line) = lines.back() {
+            if line.is_empty() {
+                lines.pop_back();
+            } else {
+                break;
+            }
+        }
 
         while let Some(line) = lines.pop_front() {
             if let Some(cap) = derive_re.captures(&line) {
