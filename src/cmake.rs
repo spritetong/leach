@@ -24,10 +24,10 @@ pub fn is_under_rust_analyzer(set_rebuild_tag: bool) -> bool {
     result
 }
 
-pub fn build() -> i32 {
+pub fn build() -> io::Result<()> {
     let root = cargo::workspace_dir();
     rerun_if_changed(root.join("CMakeLists.txt"));
-    duct::cmd!(
+    match duct::cmd!(
         "make",
         "cmake-build",
         format!("TARGET={}", cargo::linker_triple())
@@ -35,8 +35,17 @@ pub fn build() -> i32 {
     .stdout_to_stderr()
     .unchecked()
     .dir(root)
-    .run()
-    .map_or_else(|_| 1, |x| x.status.code().unwrap_or(1))
+    .run()?
+    .status
+    .code()
+    .unwrap_or(1)
+    {
+        0 => Ok(()),
+        status => Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("CMake build failed with error code: {}", status),
+        )),
+    }
 }
 
 pub fn watch_changed<R, P>(root: R, patterns: P) -> io::Result<()>
@@ -194,7 +203,9 @@ impl Bindgen {
     #[allow(clippy::type_complexity)]
     pub fn generate<'a>(
         &mut self,
-        f: Option<Box<dyn 'a + FnOnce(&mut Self, bindgen::Builder) -> io::Result<bindgen::Builder>>>,
+        f: Option<
+            Box<dyn 'a + FnOnce(&mut Self, bindgen::Builder) -> io::Result<bindgen::Builder>>,
+        >,
     ) -> io::Result<()> {
         use bindgen::callbacks::ParseCallbacks;
         #[derive(Debug)]
