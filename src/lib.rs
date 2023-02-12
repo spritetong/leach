@@ -98,7 +98,7 @@ pub mod cargo {
             ("CARGO_BUILD_OUTPUT_DIR", output_dir.as_ref()),
         ] {
             env::set_var(name, value);
-            println!("cargo:rustc-env={}={}", name, value);
+            println!("cargo:rustc-env={name}={value}");
         }
     }
 }

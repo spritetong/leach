@@ -93,7 +93,7 @@ impl Builder {
         self
     }
 
-    pub fn build(&mut self) -> io::Result<()> {
+    pub fn build(&self) -> io::Result<()> {
         let root = cargo::workspace_dir();
 
         let target = if self.target.is_empty() {
@@ -105,7 +105,7 @@ impl Builder {
         };
 
         let mut args = vec![target];
-        args.extend(self.args.drain(..));
+        args.extend(self.args.iter().cloned());
         args.push(format!("TARGET={}", cargo::linker_triple()));
 
         rerun_if_changed(root.join("CMakeLists.txt"));
@@ -121,7 +121,7 @@ impl Builder {
             0 => Ok(()),
             status => Err(io::Error::new(
                 io::ErrorKind::Other,
-                format!("CMake build failed with error code: {}", status),
+                format!("CMake build failed with error code: {status}"),
             )),
         }
     }
@@ -130,6 +130,7 @@ impl Builder {
 #[derive(Default, Hash)]
 pub struct Bindgen {
     rs_file: Option<PathBuf>,
+    allow_bad_code_styles: bool,
     headers: Vec<String>,
     includes: Vec<String>,
     definitions: Vec<(String, String)>,
@@ -140,9 +141,22 @@ pub struct Bindgen {
     derive: BTreeMap<String, Vec<String>>,
 }
 
+pub type BeforeBindgenCb<'a> =
+    dyn 'a + FnOnce(&mut Bindgen, bindgen::Builder) -> io::Result<bindgen::Builder>;
+
 impl Bindgen {
     pub fn rs_file<T: Into<PathBuf>>(&mut self, rs_file: T) -> &mut Self {
         self.rs_file = Some(rs_file.into());
+        self
+    }
+
+    pub fn allow_bad_code_styles(&mut self) -> &mut Self {
+        self.allow_bad_code_styles = true;
+        self
+    }
+
+    pub fn deny_bad_code_styles(&mut self) -> &mut Self {
+        self.allow_bad_code_styles = false;
         self
     }
 
@@ -275,13 +289,7 @@ impl Bindgen {
         self
     }
 
-    #[allow(clippy::type_complexity)]
-    pub fn generate<'a>(
-        &mut self,
-        f: Option<
-            Box<dyn 'a + FnOnce(&mut Self, bindgen::Builder) -> io::Result<bindgen::Builder>>,
-        >,
-    ) -> io::Result<()> {
+    pub fn generate(&mut self, f: Option<Box<BeforeBindgenCb<'_>>>) -> io::Result<()> {
         use bindgen::callbacks::ParseCallbacks;
         #[derive(Debug)]
         struct DependCallbacks {
@@ -444,15 +452,25 @@ impl Bindgen {
 
         // Include directories
         for include in self.includes.iter() {
-            builder = builder.clang_arg(format!("-I{}", include))
+            builder = builder.clang_arg(format!("-I{include}"))
         }
 
         // Macro definitions
         for (name, value) in self.definitions.iter() {
-            builder = builder.clang_arg(format!("-D{}={}", name, value))
+            builder = builder.clang_arg(format!("-D{name}={value}"))
         }
 
         // Header codes
+        if self.allow_bad_code_styles {
+            builder = builder
+                .raw_line("#![allow(dead_code)]")
+                .raw_line("#![allow(improper_ctypes)]")
+                .raw_line("#![allow(non_camel_case_types)]")
+                .raw_line("#![allow(non_upper_case_globals)]")
+                .raw_line("#![allow(non_snake_case)]")
+                .raw_line("#![allow(clippy::missing_safety_doc)]")
+                .raw_line("");
+        }
         for line in self.header_codes.iter() {
             builder = builder.raw_line(line);
         }
@@ -486,13 +504,6 @@ impl Bindgen {
         // Write the .rs file.
         let mut buf = Vec::<u8>::new();
         let mut w = io::Cursor::new(&mut buf);
-        w.write_all(b"#![allow(dead_code)]\n")?;
-        w.write_all(b"#![allow(improper_ctypes)]\n")?;
-        w.write_all(b"#![allow(non_camel_case_types)]\n")?;
-        w.write_all(b"#![allow(non_upper_case_globals)]\n")?;
-        w.write_all(b"#![allow(non_snake_case)]\n")?;
-        w.write_all(b"#![allow(clippy::missing_safety_doc)]\n")?;
-        w.write_all(b"\n")?;
         bindings.write(Box::new(&mut w))?;
         if !self.footer_codes.is_empty() {
             w.write_all(b"\n")?;
