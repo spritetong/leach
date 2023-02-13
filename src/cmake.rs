@@ -127,7 +127,7 @@ impl Builder {
     }
 }
 
-#[derive(Default, Hash)]
+#[derive(Clone, Default, Hash)]
 pub struct Bindgen {
     rs_file: Option<PathBuf>,
     allow_bad_code_styles: bool,
@@ -141,8 +141,8 @@ pub struct Bindgen {
     derive: BTreeMap<String, Vec<String>>,
 }
 
-pub type BeforeBindgenCb<'a> =
-    dyn 'a + FnOnce(&mut Bindgen, bindgen::Builder) -> io::Result<bindgen::Builder>;
+pub type BeforeBindgenCb =
+    dyn FnOnce(&mut Bindgen, bindgen::Builder) -> io::Result<bindgen::Builder>;
 
 impl Bindgen {
     pub fn rs_file<T: Into<PathBuf>>(&mut self, rs_file: T) -> &mut Self {
@@ -289,7 +289,7 @@ impl Bindgen {
         self
     }
 
-    pub fn generate(&mut self, f: Option<Box<BeforeBindgenCb<'_>>>) -> io::Result<()> {
+    pub fn generate(&mut self, f: Option<Box<BeforeBindgenCb>>) -> io::Result<()> {
         use bindgen::callbacks::ParseCallbacks;
         #[derive(Debug)]
         struct DependCallbacks {
