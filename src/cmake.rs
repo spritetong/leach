@@ -381,9 +381,11 @@ impl Bindgen {
             }
         }
 
-        if self.rs_file.is_none() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "No <rs_file>"));
-        }
+        let root = Self::norm_path(cargo::workspace_dir());
+        let rs_file = match self.rs_file.as_ref() {
+            Some(x) => Self::norm_path(realpath(x)),
+            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "No <rs_file>")),
+        };
 
         // Sort headers & derive crates.
         self.headers.sort();
@@ -391,17 +393,18 @@ impl Bindgen {
         // File to store dependencies.
         let dep_file = out_dir()
             .with_file_name(
-                self.rs_file
-                    .as_ref()
-                    .unwrap()
-                    .file_name()
-                    .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "No file name"))?,
+                rs_file
+                    .strip_prefix(&root)
+                    .and_then(|x| x.strip_prefix('/'))
+                    .unwrap_or(&rs_file)
+                    .replace(':', "_")
+                    .replace('/', "__"),
             )
             .with_extension("leach.d");
         let hash_file = dep_file.with_extension("hash");
 
         // Watch the output file.
-        rerun_if_changed(self.rs_file.as_ref().unwrap());
+        rerun_if_changed(&rs_file);
 
         // Check timestamp of dependencies.
         let hash = {
@@ -411,7 +414,7 @@ impl Bindgen {
         };
         if !self.is_hash_changed(&hash_file, hash)
             && !DependCallbacks::is_rebuild_required(
-                self.rs_file.as_ref().unwrap(),
+                Path::new(&rs_file),
                 dep_file.as_ref(),
                 self.headers.as_slice(),
             )
@@ -420,7 +423,7 @@ impl Bindgen {
         }
         // Create file to store dependencies.
         let depen_callback = Box::new(DependCallbacks::new(
-            &cargo::workspace_dir(),
+            Path::new(&root),
             &dep_file,
             self.headers.as_slice(),
         )?);
@@ -468,8 +471,10 @@ impl Bindgen {
                 .raw_line("#![allow(non_camel_case_types)]")
                 .raw_line("#![allow(non_upper_case_globals)]")
                 .raw_line("#![allow(non_snake_case)]")
-                .raw_line("#![allow(clippy::missing_safety_doc)]")
-                .raw_line("");
+                .raw_line("#![allow(clippy::missing_safety_doc)]");
+            if !self.header_codes.is_empty() {
+                builder = builder.raw_line("");
+            }
         }
         for line in self.header_codes.iter() {
             builder = builder.raw_line(line);
@@ -517,7 +522,7 @@ impl Bindgen {
             .truncate(true)
             .create(true)
             .write(true)
-            .open(self.rs_file.as_ref().unwrap())?;
+            .open(&rs_file)?;
         Self::apply_derive(self, file, buf)?;
 
         self.write_hash(&hash_file, hash)
