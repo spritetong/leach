@@ -336,9 +336,10 @@ impl Bindgen {
                 if let Ok(metadata) = fs::metadata(rs_file) {
                     let rs_mtime = FileTime::from_last_modification_time(&metadata);
                     if let Ok(f) = fs::File::open(dep_file) {
+                        #[allow(clippy::lines_filter_map_ok)]
                         let lines: Vec<String> = io::BufReader::new(f)
                             .lines()
-                            .filter_map(|x| x.ok())
+                            .map_while(Result::ok)
                             .collect();
 
                         // Compare the current headers to the previous headers.
@@ -632,7 +633,7 @@ impl Bindgen {
         bindgen::Builder::default()
             .disable_header_comment()
             .layout_tests(false)
-            .rustfmt_bindings(true)
+            .formatter(bindgen::Formatter::Rustfmt)
             .prepend_enum_name(false)
             .size_t_is_usize(true)
     }
