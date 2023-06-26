@@ -1,6 +1,5 @@
 pub use ::bindgen;
 pub use ::build_helper::{self, *};
-pub use ::duct;
 pub use ::std::{
     cell::RefCell,
     collections::HashSet,
