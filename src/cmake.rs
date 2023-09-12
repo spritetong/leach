@@ -469,6 +469,7 @@ impl Bindgen {
             builder = builder
                 .raw_line("#![allow(dead_code)]")
                 .raw_line("#![allow(improper_ctypes)]")
+                .raw_line("#![allow(improper_ctypes_definitions)]")
                 .raw_line("#![allow(non_camel_case_types)]")
                 .raw_line("#![allow(non_upper_case_globals)]")
                 .raw_line("#![allow(non_snake_case)]")
@@ -551,8 +552,8 @@ impl Bindgen {
             .map(|x| String::from_utf8_lossy(x.strip_suffix(&[b'\r']).unwrap_or(x)))
             .collect();
 
-        let derive_re = Regex::new(r#"^#\[derive\(([[[:word:]], ]+)\)\]$"#).unwrap();
-        let type_re = Regex::new(r#"^pub (?:enum|struct) ([[:word:]]+) \{$"#).unwrap();
+        let derive_re = Regex::new(r"^#\[derive\(([[[:word:]], ]+)\)\]$").unwrap();
+        let type_re = Regex::new(r"^pub (?:enum|struct) ([[:word:]]+) \{$").unwrap();
 
         // UTF-8 BOM
         file.write_all(b"\xEF\xBB\xBF")?;
