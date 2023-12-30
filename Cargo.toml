@@ -8,7 +8,7 @@ name = "leach"
 path = "src/lib.rs"
 
 [dependencies]
-bindgen = "0.68"
+bindgen = "0.69"
 build-helper = "0.1"
 duct = "0.13"
 filetime = "0.2"
