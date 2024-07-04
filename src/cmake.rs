@@ -60,7 +60,11 @@ where
     P::Item: AsRef<Path>,
 {
     for file in files.into_iter() {
-        let f = fs::OpenOptions::new().create(true).write(true).open(file)?;
+        let f = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(file)?;
         filetime::set_file_handle_times(&f, None, Some(FileTime::now()))?;
     }
     Ok(())
@@ -473,7 +477,8 @@ impl Bindgen {
                 .raw_line("#![allow(non_camel_case_types)]")
                 .raw_line("#![allow(non_upper_case_globals)]")
                 .raw_line("#![allow(non_snake_case)]")
-                .raw_line("#![allow(clippy::missing_safety_doc)]");
+                .raw_line("#![allow(clippy::missing_safety_doc)]")
+                .raw_line("#![allow(clippy::missing_transmute_annotations)]");
             if !self.header_codes.is_empty() {
                 builder = builder.raw_line("");
             }
