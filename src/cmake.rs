@@ -110,7 +110,11 @@ impl Builder {
 
         let mut args = vec![target];
         args.extend(self.args.iter().cloned());
-        args.push(format!("TARGET={}", cargo::linker_triple()));
+        let (triple, linker) = cargo::linker_triple();
+        args.push(format!("TARGET={}", triple));
+        if linker.is_some_and(|x| x.starts_with("zig")) {
+            args.push("ZIG=ON".to_owned());
+        }
 
         rerun_if_changed(root.join("CMakeLists.txt"));
         match duct::cmd("make", args)

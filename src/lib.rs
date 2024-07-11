@@ -21,27 +21,33 @@ pub mod cargo {
     use super::*;
     pub use ::build_helper::cargo::*;
 
-    /// Get triple from the cross compile linker if it's present,
+    /// Get `(<triple>, Option<cross-linker-name>)` from the cross compile linker if it's present,
     /// or the target triple otherwize.
-    pub fn linker_triple() -> String {
+    pub fn linker_triple() -> (String, Option<String>) {
         let triple = target::triple().to_string();
-        match env::var(format!(
+        if let Ok(s) = env::var(format!(
             "CARGO_TARGET_{}_LINKER",
             canon_feature_name(&triple)
         ))
         .or_else(|_| env::var("RUSTC_LINKER"))
         {
-            // Remove the tailer "-gcc".
-            Ok(v) => v
-                .split('-')
-                .rev()
-                .skip(1)
-                .collect::<Vec<&str>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<&str>>()
-                .join("-"),
-            _ => triple,
+            let linker = Path::new(&s)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            // Remove the tailing "-gcc".
+            if let Some(s) = linker
+                .strip_suffix("-gcc")
+                .or_else(|| linker.strip_suffix("-cc"))
+            {
+                if s.chars().filter(|&x| x == '-').count() >= 2 {
+                    return (s.to_owned(), Some(linker));
+                }
+            }
+            (triple, Some(linker))
+        } else {
+            (triple, None)
         }
     }
 
