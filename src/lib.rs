@@ -21,33 +21,40 @@ pub mod cargo {
     use super::*;
     pub use ::build_helper::cargo::*;
 
-    /// Get `(<triple>, Option<cross-linker-name>)` from the cross compile linker if it's present,
-    /// or the target triple otherwize.
-    pub fn linker_triple() -> (String, Option<String>) {
+    /// Get `(<target-triple>, Option<cc-path>, Option<cross-linker-name>)` from
+    /// the cross compile linker if it's present, or the target triple otherwize.
+    pub fn triple_cc_linker() -> (String, Option<String>, Option<String>) {
+        // `cmake-abe` v0.7.0 sets `CMKABE_TARGET` and `CMKABE_TARGET_CC`.
+        if let (Ok(target), Ok(target_cc)) =
+            (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_CC"))
+        {
+            return (target, Some(target_cc), None);
+        }
+
         let triple = target::triple().to_string();
-        if let Ok(s) = env::var(format!(
+        if let Ok(linker_path) = env::var(format!(
             "CARGO_TARGET_{}_LINKER",
             canon_feature_name(&triple)
         ))
         .or_else(|_| env::var("RUSTC_LINKER"))
         {
-            let linker = Path::new(&s)
+            let linker = Path::new(&linker_path)
                 .file_stem()
                 .unwrap()
                 .to_string_lossy()
                 .into_owned();
             // Remove the tailing "-gcc".
-            if let Some(s) = linker
+            if let Some(prefix) = linker
                 .strip_suffix("-gcc")
                 .or_else(|| linker.strip_suffix("-cc"))
             {
-                if s.chars().filter(|&x| x == '-').count() >= 2 {
-                    return (s.to_owned(), Some(linker));
+                if prefix.chars().filter(|&x| x == '-').count() >= 2 {
+                    return (prefix.to_owned(), Some(linker_path), Some(linker));
                 }
             }
-            (triple, Some(linker))
+            (triple, Some(linker_path), Some(linker))
         } else {
-            (triple, None)
+            (triple, None, None)
         }
     }
 

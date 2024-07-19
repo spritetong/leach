@@ -110,9 +110,11 @@ impl Builder {
 
         let mut args = vec![target];
         args.extend(self.args.iter().cloned());
-        let (triple, linker) = cargo::linker_triple();
+        let (triple, cc, linker) = cargo::triple_cc_linker();
         args.push(format!("TARGET={}", triple));
-        if linker.is_some_and(|x| x.starts_with("zig")) {
+        if let Some(cc) = cc {
+            args.push(format!("TARGET_CC={}", cc));
+        } else if linker.is_some_and(|x| x.starts_with("zig")) {
             args.push("ZIG=ON".to_owned());
         }
 
@@ -195,6 +197,24 @@ impl Bindgen {
     {
         self.includes
             .extend(includes.into_iter().map(Self::norm_path));
+        self
+    }
+
+    pub fn zig_libc_includes(&mut self) -> &mut Self {
+        // `cmake-abe` v0.7.0 sets `ZIG_WRAPPER_TARGET` and `ZIG_LIBC_INCLUDES`.
+        if let (Ok(_), Ok(includes)) = (
+            env::var("ZIG_WRAPPER_TARGET"),
+            env::var("ZIG_LIBC_INCLUDES"),
+        ) {
+            self.includes
+                .extend(env::split_paths(&includes).filter_map(|x| {
+                    if !x.as_os_str().is_empty() {
+                        Some(Self::norm_path(x))
+                    } else {
+                        None
+                    }
+                }));
+        }
         self
     }
 
