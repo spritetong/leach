@@ -70,6 +70,40 @@ where
     Ok(())
 }
 
+/// Returns the target output prefix directory of `cmake-abe`,
+/// excluding the tailing `/<target-triple>`.
+pub fn target_prefix_dir() -> Option<String> {
+    env::var("CMKABE_TARGET_PREFIX").ok()
+}
+
+/// Returns the target output prefix directory of `cmake-abe`,
+/// including the tailing `/<target-triple>`.
+pub fn prefix_triple_dir() -> Option<String> {
+    if let (Ok(target), Ok(target_prefix_dir)) =
+        (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_PREFIX"))
+    {
+        Some(format!("{}/{}", target_prefix_dir, target))
+    } else {
+        None
+    }
+}
+
+/// Set the link search paths of `cmake-abe`.
+pub fn set_link_search(link_kind: Option<SearchKind>) {
+    if let (Ok(target), Ok(target_prefix_dir)) =
+        (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_PREFIX"))
+    {
+        let cargo_target = crate::target::triple().to_string();
+        rustc::link_search(link_kind, format!("{}/{}/lib", target_prefix_dir, target));
+        if target != cargo_target {
+            rustc::link_search(
+                link_kind,
+                format!("{}/{}/lib", target_prefix_dir, cargo_target),
+            );
+        }
+    }
+}
+
 /// Build helper for cmake.
 #[derive(Clone, Default)]
 pub struct Builder {
@@ -110,12 +144,23 @@ impl Builder {
 
         let mut args = vec![target];
         args.extend(self.args.iter().cloned());
-        let (triple, cc, linker) = cargo::triple_cc_linker();
-        args.push(format!("TARGET={}", triple));
-        if let Some(cc) = cc {
-            args.push(format!("TARGET_CC={}", cc));
-        } else if linker.is_some_and(|x| x.starts_with("zig")) {
-            args.push("ZIG=ON".to_owned());
+        if env::var("CMKABE_TARGET").is_ok() {
+            fn opt(name: &str, key: &str) -> String {
+                format!("{}={}", name, env::var(key).unwrap_or_default())
+            }
+            args.push(opt("TARGET", "CMKABE_TARGET"));
+            args.push(opt("TARGET_DIR", "CMKABE_TARGET_DIR"));
+            args.push(opt("TARGET_CMAKE_DIR", "CMKABE_TARGET_CMAKE_DIR"));
+            args.push(opt("CMAKE_TARGET_PREFIX", "CMKABE_TARGET_PREFIX"));
+            args.push(opt("TARGET_CC", "CMKABE_TARGET_CC"));
+            args.push(opt("CARGO_TARGET", "CMKABE_CARGO_TARGET"));
+            args.push(opt("ZIG_TARGET", "CMKABE_ZIG_TARGET"));
+            args.push(opt("DEBUG", "CMKABE_DEBUG"));
+            args.push(opt("MINSIZE", "CMKABE_MINSIZE"));
+            args.push(opt("DBGINFO", "CMKABE_DBGINFO"));
+        } else {
+            let (triple, _linker) = cargo::triple_linker();
+            args.push(format!("TARGET={}", triple));
         }
 
         rerun_if_changed(root.join("CMakeLists.txt"));
@@ -200,12 +245,9 @@ impl Bindgen {
         self
     }
 
+    /// Set the Zig libc includes of `cmake-abe`.
     pub fn zig_libc_includes(&mut self) -> &mut Self {
-        // `cmake-abe` v0.7.0 sets `ZIG_WRAPPER_TARGET` and `ZIG_LIBC_INCLUDES`.
-        if let (Ok(_), Ok(includes)) = (
-            env::var("ZIG_WRAPPER_TARGET"),
-            env::var("ZIG_LIBC_INCLUDES"),
-        ) {
+        if let (Ok(_), Ok(includes)) = (env::var("CMKABE_TARGET"), env::var("ZIG_LIBC_INCLUDES")) {
             self.includes
                 .extend(env::split_paths(&includes).filter_map(|x| {
                     if !x.as_os_str().is_empty() {
@@ -214,6 +256,24 @@ impl Bindgen {
                         None
                     }
                 }));
+        }
+        self
+    }
+
+    /// Set the C/C++ includes of `cmake-abe`.
+    pub fn cmake_includes(&mut self) -> &mut Self {
+        if let (Ok(target), Ok(target_prefix_dir)) =
+            (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_PREFIX"))
+        {
+            let cargo_target = crate::target::triple().to_string();
+            self.includes
+                .push(format!("{}/{}/include", target_prefix_dir, target));
+            if target != cargo_target {
+                self.includes
+                    .push(format!("{}/{}/include", target_prefix_dir, cargo_target));
+            }
+            // Add Zig libc includes.
+            self.zig_libc_includes();
         }
         self
     }

@@ -21,16 +21,9 @@ pub mod cargo {
     use super::*;
     pub use ::build_helper::cargo::*;
 
-    /// Get `(<target-triple>, Option<cc-path>, Option<cross-linker-name>)` from
+    /// Get `(<target-triple>, Option<cross-linker-name>)` from
     /// the cross compile linker if it's present, or the target triple otherwize.
-    pub fn triple_cc_linker() -> (String, Option<String>, Option<String>) {
-        // `cmake-abe` v0.7.0 sets `CMKABE_TARGET` and `CMKABE_TARGET_CC`.
-        if let (Ok(target), Ok(target_cc)) =
-            (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_CC"))
-        {
-            return (target, Some(target_cc), None);
-        }
-
+    pub fn triple_linker() -> (String, Option<String>) {
         let triple = target::triple().to_string();
         if let Ok(linker_path) = env::var(format!(
             "CARGO_TARGET_{}_LINKER",
@@ -49,12 +42,12 @@ pub mod cargo {
                 .or_else(|| linker.strip_suffix("-cc"))
             {
                 if prefix.chars().filter(|&x| x == '-').count() >= 2 {
-                    return (prefix.to_owned(), Some(linker_path), Some(linker));
+                    return (prefix.to_owned(), Some(linker));
                 }
             }
-            (triple, Some(linker_path), Some(linker))
+            (triple, Some(linker))
         } else {
-            (triple, None, None)
+            (triple, None)
         }
     }
 
