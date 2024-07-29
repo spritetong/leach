@@ -245,21 +245,6 @@ impl Bindgen {
         self
     }
 
-    /// Set the Zig libc includes of `cmake-abe`.
-    pub fn zig_libc_includes(&mut self) -> &mut Self {
-        if let (Ok(_), Ok(includes)) = (env::var("CMKABE_TARGET"), env::var("ZIG_LIBC_INCLUDES")) {
-            self.includes
-                .extend(env::split_paths(&includes).filter_map(|x| {
-                    if !x.as_os_str().is_empty() {
-                        Some(Self::norm_path(x))
-                    } else {
-                        None
-                    }
-                }));
-        }
-        self
-    }
-
     /// Set the C/C++ includes of `cmake-abe`.
     pub fn cmake_includes(&mut self) -> &mut Self {
         if let (Ok(target), Ok(target_prefix_dir)) =
@@ -272,8 +257,8 @@ impl Bindgen {
                 self.includes
                     .push(format!("{}/{}/include", target_prefix_dir, cargo_target));
             }
-            // Add Zig libc includes.
-            self.zig_libc_includes();
+            self.includes
+                .push(format!("{}/any/include", target_prefix_dir));
         }
         self
     }
