@@ -79,9 +79,7 @@ pub fn target_prefix_dir() -> Option<String> {
 /// Returns the target output prefix directory of `cmake-abe`,
 /// including the tailing `/<target-triple>`.
 pub fn prefix_triple_dir() -> Option<String> {
-    if let (Ok(target), Ok(target_prefix_dir)) =
-        (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_PREFIX"))
-    {
+    if let Some((target, _, target_prefix_dir)) = cmkabe_target_prefix() {
         Some(format!("{}/{}", target_prefix_dir, target))
     } else {
         None
@@ -90,10 +88,7 @@ pub fn prefix_triple_dir() -> Option<String> {
 
 /// Set the link search paths of `cmake-abe`.
 pub fn set_link_search(link_kind: Option<SearchKind>) {
-    if let (Ok(target), Ok(target_prefix_dir)) =
-        (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_PREFIX"))
-    {
-        let cargo_target = crate::target::triple().to_string();
+    if let Some((target, cargo_target, target_prefix_dir)) = cmkabe_target_prefix() {
         rustc::link_search(link_kind, format!("{}/{}/lib", target_prefix_dir, target));
         if target != cargo_target {
             rustc::link_search(
@@ -101,6 +96,21 @@ pub fn set_link_search(link_kind: Option<SearchKind>) {
                 format!("{}/{}/lib", target_prefix_dir, cargo_target),
             );
         }
+    }
+}
+
+fn cmkabe_target_prefix() -> Option<(String, String, String)> {
+    if let (Ok(mut target), Ok(cargo_target), Ok(target_prefix_dir)) = (
+        env::var("CMKABE_TARGET"),
+        env::var("CMKABE_CARGO_TARGET"),
+        env::var("CMKABE_TARGET_PREFIX"),
+    ) {
+        if target.is_empty() || target == "native" {
+            target.clone_from(&cargo_target);
+        }
+        Some((target, cargo_target, target_prefix_dir))
+    } else {
+        None
     }
 }
 
@@ -247,10 +257,7 @@ impl Bindgen {
 
     /// Set the C/C++ includes of `cmake-abe`.
     pub fn cmake_includes(&mut self) -> &mut Self {
-        if let (Ok(target), Ok(target_prefix_dir)) =
-            (env::var("CMKABE_TARGET"), env::var("CMKABE_TARGET_PREFIX"))
-        {
-            let cargo_target = crate::target::triple().to_string();
+        if let Some((target, cargo_target, target_prefix_dir)) = cmkabe_target_prefix() {
             self.includes
                 .push(format!("{}/{}/include", target_prefix_dir, target));
             if target != cargo_target {
