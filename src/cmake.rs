@@ -88,14 +88,15 @@ pub fn prefix_triple_dir() -> Option<String> {
 
 /// Set the link search paths of `cmake-abe`.
 pub fn set_link_search(link_kind: Option<SearchKind>) {
-    if let Some((target, cargo_target, target_prefix_dir)) = cmkabe_target_prefix() {
-        rustc::link_search(link_kind, format!("{}/{}/lib", target_prefix_dir, target));
-        if target != cargo_target {
-            rustc::link_search(
-                link_kind,
-                format!("{}/{}/lib", target_prefix_dir, cargo_target),
-            );
-        }
+    if let Ok(dirs) = env::var("CMKABE_LINK_DIRS") {
+        env::split_paths(&dirs).for_each(|dir| {
+            if let Some(dir) = dir.to_str() {
+                let dir = dir.trim();
+                if !dir.is_empty() {
+                    rustc::link_search(link_kind, dir);
+                }
+            }
+        });
     }
 }
 
@@ -257,15 +258,15 @@ impl Bindgen {
 
     /// Set the C/C++ includes of `cmake-abe`.
     pub fn cmake_includes(&mut self) -> &mut Self {
-        if let Some((target, cargo_target, target_prefix_dir)) = cmkabe_target_prefix() {
-            self.includes
-                .push(format!("{}/{}/include", target_prefix_dir, target));
-            if target != cargo_target {
-                self.includes
-                    .push(format!("{}/{}/include", target_prefix_dir, cargo_target));
-            }
-            self.includes
-                .push(format!("{}/any/include", target_prefix_dir));
+        if let Ok(dirs) = env::var("CMKABE_INCLUDE_DIRS") {
+            env::split_paths(&dirs).for_each(|dir| {
+                if let Some(dir) = dir.to_str() {
+                    let dir = dir.trim();
+                    if !dir.is_empty() {
+                        self.includes.push(dir.to_owned());
+                    }
+                }
+            });
         }
         self
     }
