@@ -117,15 +117,44 @@ fn cmkabe_target_prefix() -> Option<(String, String, String)> {
 
 /// Build helper for cmake.
 #[derive(Clone, Default)]
-pub struct Builder {
+pub struct MakeBuilder {
     target: String,
     args: Vec<String>,
+    skipped: bool,
 }
 
-impl Builder {
-    pub fn target(&mut self, target: impl Into<String>) -> &mut Self {
-        self.target = target.into();
-        self
+impl MakeBuilder {
+    pub fn with_cmake_targets<I>(cmake_targets: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        let mut builder = Self::default();
+
+        let mut filter_out = Vec::<&str>::new();
+        let compileted_projects = env::var("CMKABE_COMPLETED_PORJECTS").ok();
+        if let Some(ref s) = compileted_projects {
+            s.split(&[',', ';', ' ', '\t'][..])
+                .for_each(|x| filter_out.push(x));
+        }
+
+        let mut arg = "CMAKE_TARGETS=".to_owned();
+        builder.skipped = true;
+        cmake_targets.into_iter().for_each(|x| {
+            let s = x.as_ref();
+            if !filter_out.contains(&s) {
+                if builder.skipped {
+                    builder.skipped = false;
+                } else {
+                    arg.push_str(" ");
+                }
+                arg.push_str(s);
+            }
+        });
+
+        builder.arg("cmake".to_owned());
+        builder.arg(arg);
+        builder
     }
 
     pub fn arg(&mut self, arg: impl Into<String>) -> &mut Self {
@@ -143,8 +172,11 @@ impl Builder {
     }
 
     pub fn build(&self) -> io::Result<()> {
-        let root = cargo::workspace_dir();
+        if self.skipped {
+            return Ok(());
+        }
 
+        let root = cargo::workspace_dir();
         let target = if self.target.is_empty() {
             "cmake-build".to_owned()
         } else if self.target.starts_with("cmake-") {
