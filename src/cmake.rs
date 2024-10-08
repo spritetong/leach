@@ -70,20 +70,42 @@ where
     Ok(())
 }
 
-/// Returns the target output prefix directory of `cmake-abe`,
+/// Returns the CMake build type of `cmake-abe`: `Debug`, `Release`, `RelWithDebInfo`, or `MinSizeRel`.
+pub fn build_type() -> Option<String> {
+    env::var("CMKABE_CMAKE_BUILD_TYPE").ok()
+}
+
+/// Returns the CMake default installation prefix directory of `cmake-abe`,
 /// excluding the tailing `/<target-triple>`.
 pub fn target_prefix_dir() -> Option<String> {
     env::var("CMKABE_TARGET_PREFIX").ok()
 }
 
-/// Returns the target output prefix directory of `cmake-abe`,
+/// Returns the CMake default installation prefix directory of `cmake-abe`,
 /// including the tailing `/<target-triple>`.
-pub fn prefix_triple_dir() -> Option<String> {
-    if let Some((target, _, target_prefix_dir)) = cmkabe_target_prefix() {
-        Some(format!("{}/{}", target_prefix_dir, target))
+pub fn prefix_dir() -> Option<String> {
+    if let (Ok(host_target), Ok(target), Ok(target_prefix_dir)) = (
+        env::var("CMKABE_HOST_TARGET"),
+        env::var("CMKABE_TARGET"),
+        env::var("CMKABE_TARGET_PREFIX"),
+    ) {
+        Some(format!(
+            "{}/{}",
+            &target_prefix_dir,
+            if target.is_empty() || target == "native" {
+                &host_target
+            } else {
+                &target
+            },
+        ))
     } else {
         None
     }
+}
+
+/// Returns the CMake build directory of `cmake-abe`.
+pub fn build_dir() -> Option<String> {
+    env::var("CMKABE_CMAKE_BUILD_DIR").ok()
 }
 
 /// Set the link search paths of `cmake-abe`.
@@ -97,21 +119,6 @@ pub fn set_link_search(link_kind: Option<SearchKind>) {
                 }
             }
         });
-    }
-}
-
-fn cmkabe_target_prefix() -> Option<(String, String, String)> {
-    if let (Ok(mut target), Ok(cargo_target), Ok(target_prefix_dir)) = (
-        env::var("CMKABE_TARGET"),
-        env::var("CMKABE_CARGO_TARGET"),
-        env::var("CMKABE_TARGET_PREFIX"),
-    ) {
-        if target.is_empty() || target == "native" {
-            target.clone_from(&cargo_target);
-        }
-        Some((target, cargo_target, target_prefix_dir))
-    } else {
-        None
     }
 }
 
@@ -187,20 +194,14 @@ impl MakeBuilder {
 
         let mut args = vec![target];
         args.extend(self.args.iter().cloned());
-        if env::var("CMKABE_TARGET").is_ok() {
-            fn opt(name: &str, key: &str) -> String {
-                format!("{}={}", name, env::var(key).unwrap_or_default())
+        if let Ok(vars) = env::var("CMKABE_MAKE_BUILD_VARS") {
+            let mut key = String::new();
+            for name in vars.split(';').filter(|&s| !s.is_empty()) {
+                key.clear();
+                key.push_str("CMKABE_");
+                key.push_str(name);
+                args.push(format!("{}={}", name, env::var(&key).unwrap_or_default()));
             }
-            args.push(opt("TARGET", "CMKABE_TARGET"));
-            args.push(opt("TARGET_DIR", "CMKABE_TARGET_DIR"));
-            args.push(opt("TARGET_CMAKE_DIR", "CMKABE_TARGET_CMAKE_DIR"));
-            args.push(opt("CMAKE_TARGET_PREFIX", "CMKABE_TARGET_PREFIX"));
-            args.push(opt("TARGET_CC", "CMKABE_TARGET_CC"));
-            args.push(opt("CARGO_TARGET", "CMKABE_CARGO_TARGET"));
-            args.push(opt("ZIG_TARGET", "CMKABE_ZIG_TARGET"));
-            args.push(opt("DEBUG", "CMKABE_DEBUG"));
-            args.push(opt("MINSIZE", "CMKABE_MINSIZE"));
-            args.push(opt("DBGINFO", "CMKABE_DBGINFO"));
         } else {
             let (triple, _linker) = cargo::triple_linker();
             args.push(format!("TARGET={}", triple));
