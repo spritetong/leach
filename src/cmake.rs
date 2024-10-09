@@ -153,7 +153,7 @@ impl MakeBuilder {
                 if builder.skipped {
                     builder.skipped = false;
                 } else {
-                    arg.push_str(" ");
+                    arg.push(' ');
                 }
                 arg.push_str(s);
             }
@@ -666,7 +666,7 @@ impl Bindgen {
     fn apply_derive(&self, mut file: fs::File, text: Vec<u8>) -> io::Result<()> {
         let mut lines: VecDeque<Cow<'_, str>> = text
             .split(|&x| x == b'\n')
-            .map(|x| String::from_utf8_lossy(x.strip_suffix(&[b'\r']).unwrap_or(x)))
+            .map(|x| String::from_utf8_lossy(x.strip_suffix(b"\r").unwrap_or(x)))
             .collect();
 
         let derive_re = Regex::new(r"^#\[derive\(([[[:word:]], ]+)\)\]$").unwrap();
