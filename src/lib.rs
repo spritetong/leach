@@ -116,17 +116,29 @@ pub mod rustc {
     use super::*;
     pub use ::build_helper::rustc::*;
 
+    /// Links a library to the Rust build.
+    ///
+    /// # Arguments
+    /// * `kind` - The kind of library to link
+    /// * `names` - Iterator of library paths to link
     pub fn link_libs<I>(kind: Option<LibKind>, names: I)
     where
         I: IntoIterator,
+
         I::Item: AsRef<Path>,
     {
         names.into_iter().for_each(|x| link_lib(kind, x))
     }
 
+    /// Links search paths to the Rust build.
+    ///
+    /// # Arguments
+    /// * `kind` - The kind of search path to link
+    /// * `paths` - Iterator of paths to link
     pub fn link_search_paths<I>(kind: Option<SearchKind>, paths: I)
     where
         I: IntoIterator,
+
         I::Item: AsRef<Path>,
     {
         paths.into_iter().for_each(|x| link_search(kind, x))
@@ -138,11 +150,23 @@ pub mod target {
 }
 
 /// Upper-case seperated with '_'
+///
+/// # Arguments
+/// * `name` - The name to convert
+///
+/// # Returns
+/// * `String` - The converted name
 pub fn canon_feature_name<T: AsRef<str>>(name: T) -> String {
     name.as_ref().to_ascii_uppercase().replace('-', "_")
 }
 
 /// Get the real path, or the original value if the path is not existent.
+///
+/// # Arguments
+/// * `path` - The path to get the real path of
+///
+/// # Returns
+/// * `PathBuf` - The real path of the given path
 pub fn realpath<P: AsRef<Path>>(path: P) -> PathBuf {
     let path = path.as_ref();
     match path.canonicalize() {

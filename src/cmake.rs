@@ -6,6 +6,14 @@ use std::{
     io::Read,
 };
 
+/// Returns true if the current process is under the control of VSCode or rust-analyzer.
+/// 
+/// # Arguments 
+/// * `set_rebuild_tag` - If true, it will create a timestamp file to trigger rebuilds.
+/// 
+/// # Returns
+/// * `bool` - True if the current process is under the control of VSCode or rust-analyzer,
+///   otherwise false.
 pub fn is_under_rust_analyzer(set_rebuild_tag: bool) -> bool {
     let result = env::var("VSCODE_PID").is_ok();
     if result && set_rebuild_tag {
@@ -24,6 +32,14 @@ pub fn is_under_rust_analyzer(set_rebuild_tag: bool) -> bool {
     result
 }
 
+/// Monitors file changes in the specified directory and triggers rebuilds when matching files change.
+/// 
+/// # Arguments
+/// * `root` - The root directory to monitor
+/// * `patterns` - Regular expression patterns to match filenames against
+/// 
+/// # Returns
+/// * `io::Result<()>` - Success or error status
 pub fn monitor_file_changes<R, P>(root: R, patterns: P) -> io::Result<()>
 where
     R: AsRef<Path>,
@@ -54,6 +70,13 @@ where
     Ok(())
 }
 
+/// Updates the timestamps of the specified files.
+/// 
+/// # Arguments
+/// * `files` - Iterator of file paths to touch
+/// 
+/// # Returns
+/// * `io::Result<()>` - Success or error status
 pub fn touch<P>(files: P) -> io::Result<()>
 where
     P: IntoIterator,
@@ -70,19 +93,18 @@ where
     Ok(())
 }
 
-/// Returns the CMake build type of `cmake-abe`: `Debug`, `Release`, `RelWithDebInfo`, or `MinSizeRel`.
+/// Returns the CMake build type configured for cmake-abe.
+/// Possible values are: Debug, Release, RelWithDebInfo, or MinSizeRel.
 pub fn build_type() -> Option<String> {
     env::var("CMKABE_CMAKE_BUILD_TYPE").ok()
 }
 
-/// Returns the CMake default installation prefix directory of `cmake-abe`,
-/// excluding the tailing `/<target-triple>`.
+/// Returns the CMake default installation prefix directory, excluding target triple.
 pub fn target_prefix_dir() -> Option<String> {
     env::var("CMKABE_TARGET_PREFIX").ok()
 }
 
-/// Returns the CMake default installation prefix directory of `cmake-abe`,
-/// including the tailing `/<target-triple>`.
+/// Returns the complete CMake installation prefix directory including target triple.
 pub fn prefix_dir() -> Option<String> {
     if let (Ok(host_target), Ok(target), Ok(target_prefix_dir)) = (
         env::var("CMKABE_HOST_TARGET"),
@@ -103,12 +125,15 @@ pub fn prefix_dir() -> Option<String> {
     }
 }
 
-/// Returns the CMake build directory of `cmake-abe`.
+/// Returns the CMake build directory path.
 pub fn build_dir() -> Option<String> {
     env::var("CMKABE_CMAKE_BUILD_DIR").ok()
 }
 
-/// Set the link search paths of `cmake-abe`.
+/// Configures the link search paths for cmake-abe.
+/// 
+/// # Arguments
+/// * `link_kind` - Optional search kind configuration for the linker
 pub fn set_link_search(link_kind: Option<SearchKind>) {
     if let Ok(dirs) = env::var("CMKABE_LINK_DIRS") {
         env::split_paths(&dirs).for_each(|dir| {
@@ -122,7 +147,7 @@ pub fn set_link_search(link_kind: Option<SearchKind>) {
     }
 }
 
-/// Build helper for cmake.
+/// Builder for configuring and executing CMake builds.
 #[derive(Clone, Default)]
 pub struct MakeBuilder {
     target: String,
@@ -131,6 +156,10 @@ pub struct MakeBuilder {
 }
 
 impl MakeBuilder {
+    /// Creates a new MakeBuilder configured with the specified CMake targets.
+    /// 
+    /// # Arguments
+    /// * `cmake_targets` - Iterator of CMake target names to build
     pub fn with_cmake_targets<I>(cmake_targets: I) -> Self
     where
         I: IntoIterator,
@@ -164,20 +193,34 @@ impl MakeBuilder {
         builder
     }
 
+    /// Adds a single argument to the CMake build command.
+    /// 
+    /// # Arguments
+    /// * `arg` - Argument to add
     pub fn arg(&mut self, arg: impl Into<String>) -> &mut Self {
         self.args.push(arg.into());
         self
     }
 
+
+    /// Adds multiple arguments to the CMake build command.
+    /// 
+    /// # Arguments
+    /// * `args` - Iterator of arguments to add
     pub fn args<A>(&mut self, args: A) -> &mut Self
     where
         A: IntoIterator,
+
         A::Item: Into<String>,
     {
         self.args.extend(args.into_iter().map(|x| x.into()));
         self
     }
 
+    /// Executes the CMake build with the configured settings.
+    /// 
+    /// # Returns
+    /// * `io::Result<()>` - Success or error status
     pub fn build(&self) -> io::Result<()> {
         if self.skipped {
             return Ok(());
@@ -226,6 +269,7 @@ impl MakeBuilder {
     }
 }
 
+/// Configuration builder for generating Rust FFI bindings from C/C++ headers.
 #[derive(Clone, Default, Hash)]
 pub struct Bindgen {
     rs_file: Option<PathBuf>,
@@ -244,26 +288,40 @@ pub type BeforeBindgenCb =
     dyn FnOnce(&mut Bindgen, bindgen::Builder) -> io::Result<bindgen::Builder>;
 
 impl Bindgen {
+    /// Sets the output Rust file path for the generated bindings.
+    /// 
+    /// # Arguments
+    /// * `rs_file` - Path to the output Rust file
     pub fn rs_file<T: Into<PathBuf>>(&mut self, rs_file: T) -> &mut Self {
         self.rs_file = Some(rs_file.into());
         self
     }
 
+    /// Enables generation of code that may not follow Rust style guidelines.
     pub fn allow_bad_code_styles(&mut self) -> &mut Self {
         self.allow_bad_code_styles = true;
         self
     }
 
+    /// Enforces Rust style guidelines in generated code.
     pub fn deny_bad_code_styles(&mut self) -> &mut Self {
         self.allow_bad_code_styles = false;
         self
     }
 
+    /// Adds a header file to be processed for FFI binding generation.
+    /// 
+    /// # Arguments
+    /// * `header` - Path to the C/C++ header file
     pub fn header<T: AsRef<Path>>(&mut self, header: T) -> &mut Self {
         self.headers.push(Self::norm_path(realpath(header)));
         self
     }
 
+    /// Adds multiple header files to be processed for FFI binding generation.
+    /// 
+    /// # Arguments
+    /// * `headers` - Iterator of paths to C/C++ header files
     pub fn headers<T>(&mut self, headers: T) -> &mut Self
     where
         T: IntoIterator,
@@ -274,11 +332,19 @@ impl Bindgen {
         self
     }
 
+    /// Adds an include directory for header file resolution.
+    /// 
+    /// # Arguments
+    /// * `include` - Path to include directory
     pub fn include<T: AsRef<Path>>(&mut self, include: T) -> &mut Self {
         self.includes.push(Self::norm_path(include));
         self
     }
 
+    /// Adds multiple include directories for header file resolution.
+    /// 
+    /// # Arguments
+    /// * `includes` - Iterator of paths to include directories
     pub fn includes<T>(&mut self, includes: T) -> &mut Self
     where
         T: IntoIterator,
@@ -289,7 +355,7 @@ impl Bindgen {
         self
     }
 
-    /// Set the C/C++ includes of `cmake-abe`.
+    /// Sets the include directories from cmake-abe's configuration.
     pub fn cmake_includes(&mut self) -> &mut Self {
         if let Ok(dirs) = env::var("CMKABE_INCLUDE_DIRS") {
             env::split_paths(&dirs).for_each(|dir| {
@@ -304,6 +370,11 @@ impl Bindgen {
         self
     }
 
+    /// Adds a preprocessor definition.
+    /// 
+    /// # Arguments
+    /// * `name` - Name of the macro to define
+    /// * `value` - Value to define the macro as
     pub fn definition<K, V>(&mut self, name: K, value: V) -> &mut Self
     where
         K: Into<String>,
@@ -313,6 +384,10 @@ impl Bindgen {
         self
     }
 
+    /// Adds multiple preprocessor definitions.
+    /// 
+    /// # Arguments
+    /// * `definitions` - Iterator of (name, value) pairs for macro definitions
     pub fn definitions<T, K, V>(&mut self, definitions: T) -> &mut Self
     where
         T: IntoIterator<Item = (K, V)>,
@@ -324,6 +399,10 @@ impl Bindgen {
         self
     }
 
+    /// Specifies items to include in the bindings (whitelist).
+    /// 
+    /// # Arguments
+    /// * `allowlist` - Iterator of item names to include
     pub fn allowlist<T>(&mut self, allowlist: T) -> &mut Self
     where
         T: IntoIterator,
@@ -334,6 +413,10 @@ impl Bindgen {
         self
     }
 
+    /// Specifies items to exclude from the bindings (blacklist).
+    /// 
+    /// # Arguments
+    /// * `blocklist` - Iterator of item names to exclude
     pub fn blocklist<T>(&mut self, blocklist: T) -> &mut Self
     where
         T: IntoIterator,
@@ -344,11 +427,19 @@ impl Bindgen {
         self
     }
 
+    /// Adds a raw line of Rust code at the beginning of the generated bindings.
+    /// 
+    /// # Arguments
+    /// * `line` - Line of Rust code to add
     pub fn raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
         self.header_codes.push(line.into());
         self
     }
 
+    /// Adds multiple raw lines of Rust code at the beginning of the generated bindings.
+    /// 
+    /// # Arguments
+    /// * `lines` - Iterator of Rust code lines to add
     pub fn raw_lines<T>(&mut self, lines: T) -> &mut Self
     where
         T: IntoIterator,
@@ -359,11 +450,19 @@ impl Bindgen {
         self
     }
 
+    /// Adds a raw line of Rust code at the end of the generated bindings.
+    /// 
+    /// # Arguments
+    /// * `line` - Line of Rust code to add
     pub fn tail_raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
         self.footer_codes.push(line.into());
         self
     }
 
+    /// Adds multiple raw lines of Rust code at the end of the generated bindings.
+    /// 
+    /// # Arguments
+    /// * `lines` - Iterator of Rust code lines to add
     pub fn tail_raw_lines<T>(&mut self, lines: T) -> &mut Self
     where
         T: IntoIterator,
@@ -374,6 +473,11 @@ impl Bindgen {
         self
     }
 
+    /// Specifies trait derivations for generated types.
+    /// 
+    /// # Arguments
+    /// * `types` - Types to apply the derivations to
+    /// * `traits` - Traits to derive
     pub fn derive<N, T>(&mut self, types: T, traits: N) -> &mut Self
     where
         T: IntoIterator,
@@ -403,6 +507,13 @@ impl Bindgen {
         self
     }
 
+    /// Generates the Rust FFI bindings based on the configured settings.
+    /// 
+    /// # Arguments
+    /// * `f` - Optional callback for additional builder configuration
+    /// 
+    /// # Returns
+    /// * `io::Result<()>` - Success or error status
     pub fn generate(&mut self, f: Option<Box<BeforeBindgenCb>>) -> io::Result<()> {
         use bindgen::callbacks::ParseCallbacks;
         #[derive(Debug)]
