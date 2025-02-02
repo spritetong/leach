@@ -57,13 +57,13 @@ pub mod cargo {
         env::var("CARGO_WORKSPACE_DIR").unwrap().into()
     }
 
-    /// <workspace>/target
+    /// `<workspace>/target`
     pub fn build_target_dir() -> PathBuf {
         initialize();
         env::var("CARGO_BUILD_TARGET_DIR").unwrap().into()
     }
 
-    /// <workspace>/target/<debug|release>
+    /// `<workspace>/target/<debug|release>`
     pub fn build_output_dir() -> PathBuf {
         initialize();
         env::var("CARGO_BUILD_OUTPUT_DIR").unwrap().into()
