@@ -1,3 +1,6 @@
+//! Build configuration and FFI binding generation for C/C++ projects.
+//! Provides `BindgenConfig` for header parsing and code generation via `bindgen`.
+
 use super::*;
 use std::{
     borrow::Cow,
@@ -5,269 +8,6 @@ use std::{
     hash::{Hash, Hasher},
     io::Read,
 };
-
-/// Returns true if the current process is under the control of VSCode or rust-analyzer.
-/// 
-/// # Arguments 
-/// * `set_rebuild_tag` - If true, it will create a timestamp file to trigger rebuilds.
-/// 
-/// # Returns
-/// * `bool` - True if the current process is under the control of VSCode or rust-analyzer,
-///   otherwise false.
-pub fn is_under_rust_analyzer(set_rebuild_tag: bool) -> bool {
-    let result = env::var("VSCODE_PID").is_ok();
-    if result && set_rebuild_tag {
-        use ::std::sync::atomic::{AtomicBool, Ordering};
-        static IS_INITED: AtomicBool = AtomicBool::new(false);
-        if IS_INITED
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-        {
-            let path = out_dir().with_file_name(".leach.timestamp");
-            if cmake::touch([&path]).is_ok() {
-                rerun_if_changed(path);
-            }
-        }
-    }
-    result
-}
-
-/// Monitors file changes in the specified directory and triggers rebuilds when matching files change.
-/// 
-/// # Arguments
-/// * `root` - The root directory to monitor
-/// * `patterns` - Regular expression patterns to match filenames against
-/// 
-/// # Returns
-/// * `io::Result<()>` - Success or error status
-pub fn monitor_file_changes<R, P>(root: R, patterns: P) -> io::Result<()>
-where
-    R: AsRef<Path>,
-    P: IntoIterator,
-    P::Item: AsRef<str>,
-{
-    let re =
-        RegexSet::new(patterns.into_iter()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-    for entry in WalkDir::new(root)
-        .follow_links(true)
-        .into_iter()
-        .filter_entry(|e| {
-            !e.file_name()
-                .to_str()
-                // Ingore hidden directories and the "target" directory.
-                .map(|s| s.starts_with('.') || s == "target")
-                .unwrap_or(false)
-        })
-    {
-        if let Ok(entry) = entry.as_ref() {
-            if entry.file_type().is_file()
-                && re.is_match(entry.file_name().to_string_lossy().as_ref())
-            {
-                rerun_if_changed(entry.path());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Updates the timestamps of the specified files.
-/// 
-/// # Arguments
-/// * `files` - Iterator of file paths to touch
-/// 
-/// # Returns
-/// * `io::Result<()>` - Success or error status
-pub fn touch<P>(files: P) -> io::Result<()>
-where
-    P: IntoIterator,
-    P::Item: AsRef<Path>,
-{
-    for file in files.into_iter() {
-        let f = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(file)?;
-        filetime::set_file_handle_times(&f, None, Some(FileTime::now()))?;
-    }
-    Ok(())
-}
-
-/// Returns the CMake build type configured for cmake-abe.
-/// Possible values are: Debug, Release, RelWithDebInfo, or MinSizeRel.
-pub fn build_type() -> Option<String> {
-    env::var("CMKABE_CMAKE_BUILD_TYPE").ok()
-}
-
-/// Returns the CMake default installation prefix directory, excluding target triple.
-pub fn target_prefix_dir() -> Option<String> {
-    env::var("CMKABE_TARGET_PREFIX").ok()
-}
-
-/// Returns the complete CMake installation prefix directory including target triple.
-pub fn prefix_dir() -> Option<String> {
-    if let (Ok(host_target), Ok(target), Ok(target_prefix_dir)) = (
-        env::var("CMKABE_HOST_TARGET"),
-        env::var("CMKABE_TARGET"),
-        env::var("CMKABE_TARGET_PREFIX"),
-    ) {
-        Some(format!(
-            "{}/{}",
-            &target_prefix_dir,
-            if target.is_empty() || target == "native" {
-                &host_target
-            } else {
-                &target
-            },
-        ))
-    } else {
-        None
-    }
-}
-
-/// Returns the CMake build directory path.
-pub fn build_dir() -> Option<String> {
-    env::var("CMKABE_CMAKE_BUILD_DIR").ok()
-}
-
-/// Configures the link search paths for cmake-abe.
-/// 
-/// # Arguments
-/// * `link_kind` - Optional search kind configuration for the linker
-pub fn set_link_search(link_kind: Option<SearchKind>) {
-    if let Ok(dirs) = env::var("CMKABE_LINK_DIRS") {
-        env::split_paths(&dirs).for_each(|dir| {
-            if let Some(dir) = dir.to_str() {
-                let dir = dir.trim();
-                if !dir.is_empty() {
-                    rustc::link_search(link_kind, dir);
-                }
-            }
-        });
-    }
-}
-
-/// Builder for configuring and executing CMake builds.
-#[derive(Clone, Default)]
-pub struct MakeBuilder {
-    target: String,
-    args: Vec<String>,
-    skipped: bool,
-}
-
-impl MakeBuilder {
-    /// Creates a new MakeBuilder configured with the specified CMake targets.
-    /// 
-    /// # Arguments
-    /// * `cmake_targets` - Iterator of CMake target names to build
-    pub fn with_cmake_targets<I>(cmake_targets: I) -> Self
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-    {
-        let mut builder = Self::default();
-
-        let mut filter_out = Vec::<&str>::new();
-        let compileted_projects = env::var("CMKABE_COMPLETED_PORJECTS").ok();
-        if let Some(ref s) = compileted_projects {
-            s.split(&[',', ';', ' ', '\t'][..])
-                .for_each(|x| filter_out.push(x));
-        }
-
-        let mut arg = "CMAKE_TARGETS=".to_owned();
-        builder.skipped = true;
-        cmake_targets.into_iter().for_each(|x| {
-            let s = x.as_ref();
-            if !filter_out.contains(&s) {
-                if builder.skipped {
-                    builder.skipped = false;
-                } else {
-                    arg.push(' ');
-                }
-                arg.push_str(s);
-            }
-        });
-
-        builder.arg("cmake".to_owned());
-        builder.arg(arg);
-        builder
-    }
-
-    /// Adds a single argument to the CMake build command.
-    /// 
-    /// # Arguments
-    /// * `arg` - Argument to add
-    pub fn arg(&mut self, arg: impl Into<String>) -> &mut Self {
-        self.args.push(arg.into());
-        self
-    }
-
-
-    /// Adds multiple arguments to the CMake build command.
-    /// 
-    /// # Arguments
-    /// * `args` - Iterator of arguments to add
-    pub fn args<A>(&mut self, args: A) -> &mut Self
-    where
-        A: IntoIterator,
-
-        A::Item: Into<String>,
-    {
-        self.args.extend(args.into_iter().map(|x| x.into()));
-        self
-    }
-
-    /// Executes the CMake build with the configured settings.
-    /// 
-    /// # Returns
-    /// * `io::Result<()>` - Success or error status
-    pub fn build(&self) -> io::Result<()> {
-        if self.skipped {
-            return Ok(());
-        }
-
-        let root = cargo::workspace_dir();
-        let target = if self.target.is_empty() {
-            "cmake-build".to_owned()
-        } else if self.target.starts_with("cmake-") {
-            self.target.clone()
-        } else {
-            format!("cmake-{}", &self.target)
-        };
-
-        let mut args = vec![target];
-        args.extend(self.args.iter().cloned());
-        if let Ok(vars) = env::var("CMKABE_MAKE_BUILD_VARS") {
-            let mut key = String::new();
-            for name in vars.split(';').filter(|&s| !s.is_empty()) {
-                key.clear();
-                key.push_str("CMKABE_");
-                key.push_str(name);
-                args.push(format!("{}={}", name, env::var(&key).unwrap_or_default()));
-            }
-        } else {
-            let (triple, _linker) = cargo::triple_linker();
-            args.push(format!("TARGET={}", triple));
-        }
-
-        rerun_if_changed(root.join("CMakeLists.txt"));
-        match duct::cmd("make", args)
-            .stdout_to_stderr()
-            .unchecked()
-            .dir(root)
-            .run()?
-            .status
-            .code()
-            .unwrap_or(1)
-        {
-            0 => Ok(()),
-            status => Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("CMake build failed with error code: {status}"),
-            )),
-        }
-    }
-}
 
 /// Configuration builder for generating Rust FFI bindings from C/C++ headers.
 #[derive(Clone, Default, Hash)]
@@ -284,12 +24,17 @@ pub struct Bindgen {
     derive: BTreeMap<String, Vec<String>>,
 }
 
+/// Callback invoked before bindgen code generation.
+///
+/// Receives a mutable reference to the `Bindgen` config and the
+/// `bindgen::Builder`, allowing last-minute modifications to headers,
+/// flags, or builder settings before code generation runs.
 pub type BeforeBindgenCb =
     dyn FnOnce(&mut Bindgen, bindgen::Builder) -> io::Result<bindgen::Builder>;
 
 impl Bindgen {
     /// Sets the output Rust file path for the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `rs_file` - Path to the output Rust file
     pub fn rs_file<T: Into<PathBuf>>(&mut self, rs_file: T) -> &mut Self {
@@ -310,7 +55,7 @@ impl Bindgen {
     }
 
     /// Adds a header file to be processed for FFI binding generation.
-    /// 
+    ///
     /// # Arguments
     /// * `header` - Path to the C/C++ header file
     pub fn header<T: AsRef<Path>>(&mut self, header: T) -> &mut Self {
@@ -319,7 +64,7 @@ impl Bindgen {
     }
 
     /// Adds multiple header files to be processed for FFI binding generation.
-    /// 
+    ///
     /// # Arguments
     /// * `headers` - Iterator of paths to C/C++ header files
     pub fn headers<T>(&mut self, headers: T) -> &mut Self
@@ -333,7 +78,7 @@ impl Bindgen {
     }
 
     /// Adds an include directory for header file resolution.
-    /// 
+    ///
     /// # Arguments
     /// * `include` - Path to include directory
     pub fn include<T: AsRef<Path>>(&mut self, include: T) -> &mut Self {
@@ -342,7 +87,7 @@ impl Bindgen {
     }
 
     /// Adds multiple include directories for header file resolution.
-    /// 
+    ///
     /// # Arguments
     /// * `includes` - Iterator of paths to include directories
     pub fn includes<T>(&mut self, includes: T) -> &mut Self
@@ -355,23 +100,16 @@ impl Bindgen {
         self
     }
 
-    /// Sets the include directories from cmake-abe's configuration.
+    /// Sets the include directories from cmkabe's configuration.
     pub fn cmake_includes(&mut self) -> &mut Self {
-        if let Ok(dirs) = env::var("CMKABE_INCLUDE_DIRS") {
-            env::split_paths(&dirs).for_each(|dir| {
-                if let Some(dir) = dir.to_str() {
-                    let dir = dir.trim();
-                    if !dir.is_empty() {
-                        self.includes.push(dir.to_owned());
-                    }
-                }
-            });
+        for dir in cmkabe::cmake_include_dirs() {
+            self.includes.push(dir.display().to_string());
         }
         self
     }
 
     /// Adds a preprocessor definition.
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the macro to define
     /// * `value` - Value to define the macro as
@@ -385,7 +123,7 @@ impl Bindgen {
     }
 
     /// Adds multiple preprocessor definitions.
-    /// 
+    ///
     /// # Arguments
     /// * `definitions` - Iterator of (name, value) pairs for macro definitions
     pub fn definitions<T, K, V>(&mut self, definitions: T) -> &mut Self
@@ -400,7 +138,7 @@ impl Bindgen {
     }
 
     /// Specifies items to include in the bindings (whitelist).
-    /// 
+    ///
     /// # Arguments
     /// * `allowlist` - Iterator of item names to include
     pub fn allowlist<T>(&mut self, allowlist: T) -> &mut Self
@@ -414,7 +152,7 @@ impl Bindgen {
     }
 
     /// Specifies items to exclude from the bindings (blacklist).
-    /// 
+    ///
     /// # Arguments
     /// * `blocklist` - Iterator of item names to exclude
     pub fn blocklist<T>(&mut self, blocklist: T) -> &mut Self
@@ -428,7 +166,7 @@ impl Bindgen {
     }
 
     /// Adds a raw line of Rust code at the beginning of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `line` - Line of Rust code to add
     pub fn raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
@@ -437,7 +175,7 @@ impl Bindgen {
     }
 
     /// Adds multiple raw lines of Rust code at the beginning of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `lines` - Iterator of Rust code lines to add
     pub fn raw_lines<T>(&mut self, lines: T) -> &mut Self
@@ -451,7 +189,7 @@ impl Bindgen {
     }
 
     /// Adds a raw line of Rust code at the end of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `line` - Line of Rust code to add
     pub fn tail_raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
@@ -460,7 +198,7 @@ impl Bindgen {
     }
 
     /// Adds multiple raw lines of Rust code at the end of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `lines` - Iterator of Rust code lines to add
     pub fn tail_raw_lines<T>(&mut self, lines: T) -> &mut Self
@@ -474,7 +212,7 @@ impl Bindgen {
     }
 
     /// Specifies trait derivations for generated types.
-    /// 
+    ///
     /// # Arguments
     /// * `types` - Types to apply the derivations to
     /// * `traits` - Traits to derive
@@ -508,10 +246,10 @@ impl Bindgen {
     }
 
     /// Generates the Rust FFI bindings based on the configured settings.
-    /// 
+    ///
     /// # Arguments
     /// * `f` - Optional callback for additional builder configuration
-    /// 
+    ///
     /// # Returns
     /// * `io::Result<()>` - Success or error status
     pub fn generate(&mut self, f: Option<Box<BeforeBindgenCb>>) -> io::Result<()> {
@@ -732,9 +470,7 @@ impl Bindgen {
         }
 
         // Build the FFI file.
-        let bindings = builder
-            .generate()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let bindings = builder.generate().map_err(io::Error::other)?;
 
         // Write the .rs file.
         let mut buf = Vec::<u8>::new();
