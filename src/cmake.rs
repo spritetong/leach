@@ -7,10 +7,10 @@ use std::{
 };
 
 /// Returns true if the current process is under the control of VSCode or rust-analyzer.
-/// 
-/// # Arguments 
+///
+/// # Arguments
 /// * `set_rebuild_tag` - If true, it will create a timestamp file to trigger rebuilds.
-/// 
+///
 /// # Returns
 /// * `bool` - True if the current process is under the control of VSCode or rust-analyzer,
 ///   otherwise false.
@@ -33,11 +33,11 @@ pub fn is_under_rust_analyzer(set_rebuild_tag: bool) -> bool {
 }
 
 /// Monitors file changes in the specified directory and triggers rebuilds when matching files change.
-/// 
+///
 /// # Arguments
 /// * `root` - The root directory to monitor
 /// * `patterns` - Regular expression patterns to match filenames against
-/// 
+///
 /// # Returns
 /// * `io::Result<()>` - Success or error status
 pub fn monitor_file_changes<R, P>(root: R, patterns: P) -> io::Result<()>
@@ -46,8 +46,7 @@ where
     P: IntoIterator,
     P::Item: AsRef<str>,
 {
-    let re =
-        RegexSet::new(patterns.into_iter()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let re = RegexSet::new(patterns).map_err(io::Error::other)?;
     for entry in WalkDir::new(root)
         .follow_links(true)
         .into_iter()
@@ -71,10 +70,10 @@ where
 }
 
 /// Updates the timestamps of the specified files.
-/// 
+///
 /// # Arguments
 /// * `files` - Iterator of file paths to touch
-/// 
+///
 /// # Returns
 /// * `io::Result<()>` - Success or error status
 pub fn touch<P>(files: P) -> io::Result<()>
@@ -131,7 +130,7 @@ pub fn build_dir() -> Option<String> {
 }
 
 /// Configures the link search paths for cmake-abe.
-/// 
+///
 /// # Arguments
 /// * `link_kind` - Optional search kind configuration for the linker
 pub fn set_link_search(link_kind: Option<SearchKind>) {
@@ -157,7 +156,7 @@ pub struct MakeBuilder {
 
 impl MakeBuilder {
     /// Creates a new MakeBuilder configured with the specified CMake targets.
-    /// 
+    ///
     /// # Arguments
     /// * `cmake_targets` - Iterator of CMake target names to build
     pub fn with_cmake_targets<I>(cmake_targets: I) -> Self
@@ -194,7 +193,7 @@ impl MakeBuilder {
     }
 
     /// Adds a single argument to the CMake build command.
-    /// 
+    ///
     /// # Arguments
     /// * `arg` - Argument to add
     pub fn arg(&mut self, arg: impl Into<String>) -> &mut Self {
@@ -202,9 +201,8 @@ impl MakeBuilder {
         self
     }
 
-
     /// Adds multiple arguments to the CMake build command.
-    /// 
+    ///
     /// # Arguments
     /// * `args` - Iterator of arguments to add
     pub fn args<A>(&mut self, args: A) -> &mut Self
@@ -218,7 +216,7 @@ impl MakeBuilder {
     }
 
     /// Executes the CMake build with the configured settings.
-    /// 
+    ///
     /// # Returns
     /// * `io::Result<()>` - Success or error status
     pub fn build(&self) -> io::Result<()> {
@@ -261,10 +259,9 @@ impl MakeBuilder {
             .unwrap_or(1)
         {
             0 => Ok(()),
-            status => Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("CMake build failed with error code: {status}"),
-            )),
+            status => Err(io::Error::other(format!(
+                "CMake build failed with error code: {status}"
+            ))),
         }
     }
 }
@@ -289,7 +286,7 @@ pub type BeforeBindgenCb =
 
 impl Bindgen {
     /// Sets the output Rust file path for the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `rs_file` - Path to the output Rust file
     pub fn rs_file<T: Into<PathBuf>>(&mut self, rs_file: T) -> &mut Self {
@@ -310,7 +307,7 @@ impl Bindgen {
     }
 
     /// Adds a header file to be processed for FFI binding generation.
-    /// 
+    ///
     /// # Arguments
     /// * `header` - Path to the C/C++ header file
     pub fn header<T: AsRef<Path>>(&mut self, header: T) -> &mut Self {
@@ -319,7 +316,7 @@ impl Bindgen {
     }
 
     /// Adds multiple header files to be processed for FFI binding generation.
-    /// 
+    ///
     /// # Arguments
     /// * `headers` - Iterator of paths to C/C++ header files
     pub fn headers<T>(&mut self, headers: T) -> &mut Self
@@ -333,7 +330,7 @@ impl Bindgen {
     }
 
     /// Adds an include directory for header file resolution.
-    /// 
+    ///
     /// # Arguments
     /// * `include` - Path to include directory
     pub fn include<T: AsRef<Path>>(&mut self, include: T) -> &mut Self {
@@ -342,7 +339,7 @@ impl Bindgen {
     }
 
     /// Adds multiple include directories for header file resolution.
-    /// 
+    ///
     /// # Arguments
     /// * `includes` - Iterator of paths to include directories
     pub fn includes<T>(&mut self, includes: T) -> &mut Self
@@ -371,7 +368,7 @@ impl Bindgen {
     }
 
     /// Adds a preprocessor definition.
-    /// 
+    ///
     /// # Arguments
     /// * `name` - Name of the macro to define
     /// * `value` - Value to define the macro as
@@ -385,7 +382,7 @@ impl Bindgen {
     }
 
     /// Adds multiple preprocessor definitions.
-    /// 
+    ///
     /// # Arguments
     /// * `definitions` - Iterator of (name, value) pairs for macro definitions
     pub fn definitions<T, K, V>(&mut self, definitions: T) -> &mut Self
@@ -400,7 +397,7 @@ impl Bindgen {
     }
 
     /// Specifies items to include in the bindings (whitelist).
-    /// 
+    ///
     /// # Arguments
     /// * `allowlist` - Iterator of item names to include
     pub fn allowlist<T>(&mut self, allowlist: T) -> &mut Self
@@ -414,7 +411,7 @@ impl Bindgen {
     }
 
     /// Specifies items to exclude from the bindings (blacklist).
-    /// 
+    ///
     /// # Arguments
     /// * `blocklist` - Iterator of item names to exclude
     pub fn blocklist<T>(&mut self, blocklist: T) -> &mut Self
@@ -428,7 +425,7 @@ impl Bindgen {
     }
 
     /// Adds a raw line of Rust code at the beginning of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `line` - Line of Rust code to add
     pub fn raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
@@ -437,7 +434,7 @@ impl Bindgen {
     }
 
     /// Adds multiple raw lines of Rust code at the beginning of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `lines` - Iterator of Rust code lines to add
     pub fn raw_lines<T>(&mut self, lines: T) -> &mut Self
@@ -451,7 +448,7 @@ impl Bindgen {
     }
 
     /// Adds a raw line of Rust code at the end of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `line` - Line of Rust code to add
     pub fn tail_raw_line<T: Into<String>>(&mut self, line: T) -> &mut Self {
@@ -460,7 +457,7 @@ impl Bindgen {
     }
 
     /// Adds multiple raw lines of Rust code at the end of the generated bindings.
-    /// 
+    ///
     /// # Arguments
     /// * `lines` - Iterator of Rust code lines to add
     pub fn tail_raw_lines<T>(&mut self, lines: T) -> &mut Self
@@ -474,7 +471,7 @@ impl Bindgen {
     }
 
     /// Specifies trait derivations for generated types.
-    /// 
+    ///
     /// # Arguments
     /// * `types` - Types to apply the derivations to
     /// * `traits` - Traits to derive
@@ -508,10 +505,10 @@ impl Bindgen {
     }
 
     /// Generates the Rust FFI bindings based on the configured settings.
-    /// 
+    ///
     /// # Arguments
     /// * `f` - Optional callback for additional builder configuration
-    /// 
+    ///
     /// # Returns
     /// * `io::Result<()>` - Success or error status
     pub fn generate(&mut self, f: Option<Box<BeforeBindgenCb>>) -> io::Result<()> {
@@ -732,9 +729,7 @@ impl Bindgen {
         }
 
         // Build the FFI file.
-        let bindings = builder
-            .generate()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let bindings = builder.generate().map_err(io::Error::other)?;
 
         // Write the .rs file.
         let mut buf = Vec::<u8>::new();
