@@ -8,7 +8,7 @@ categories = ["development-tools::build-utils", "development-tools::ffi", "exter
 documentation = "https://docs.rs/leach"
 license = "MIT"
 readme = "README.md"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 
 [lib]
@@ -16,9 +16,9 @@ name = "leach"
 path = "src/lib.rs"
 
 [dependencies]
-bindgen = "0.71"
+bindgen = "0.72"
 build-helper = "0.1"
-duct = "0.13"
+duct = "1"
 filetime = "0.2"
 regex = "1"
 walkdir = "2"
