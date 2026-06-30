@@ -1,15 +1,16 @@
 [package]
 name = "leach"
 authors = ["Sprite Tong <spritetong@gmail.com>"]
-description = "Streamlined FFI and cross-compilation with this powerful extension of build-helper (https://crates.io/crates/build-helper)."
+description = "Streamlined FFI and cross-compilation with this powerful build-helper replacement."
 repository = "https://github.com/spritetong/leach"
 keywords = ["cmake", "ffi", "bindings", "build-tools", "build-system"]
 categories = ["development-tools::build-utils", "development-tools::ffi", "external-ffi-bindings"]
 documentation = "https://docs.rs/leach"
 license = "MIT"
 readme = "README.md"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2021"
+rust-version = "1.80.1"
 
 [lib]
 name = "leach"
@@ -17,7 +18,7 @@ path = "src/lib.rs"
 
 [dependencies]
 bindgen = "0.72"
-build-helper = "0.1"
+semver = "1"
 duct = "1"
 filetime = "0.2"
 regex = "1"
