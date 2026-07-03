@@ -16,7 +16,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-leach = "0.2.2"
+leach = "0.3.0"
 ```
 
 ## License
