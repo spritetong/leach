@@ -92,6 +92,8 @@ pub struct MakeBuilder {
 }
 
 impl MakeBuilder {
+    const SPLIT_CHARS: &'static [char] = &[' ', '\t', ';', ','];
+
     /// Creates a new MakeBuilder configured with the specified CMake targets.
     ///
     /// # Arguments
@@ -106,7 +108,8 @@ impl MakeBuilder {
         let mut filter_out = Vec::<&str>::new();
         let completed_projects = env::var("CMKABE_COMPLETED_PROJECTS").ok();
         if let Some(ref s) = completed_projects {
-            s.split(&[',', ';', ' ', '\t'][..])
+            s.split(Self::SPLIT_CHARS)
+                .filter(|&s| !s.is_empty())
                 .for_each(|x| filter_out.push(x));
         }
 
@@ -174,7 +177,7 @@ impl MakeBuilder {
         args.extend(self.args.iter().cloned());
         if let Ok(vars) = env::var("CMKABE_MAKE_BUILD_VARS") {
             let mut key = String::new();
-            for name in vars.split(';').filter(|&s| !s.is_empty()) {
+            for name in vars.split(Self::SPLIT_CHARS).filter(|&s| !s.is_empty()) {
                 key.clear();
                 key.push_str("CMKABE_");
                 key.push_str(name);
